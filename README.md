@@ -41,6 +41,17 @@ The panel never touches the filesystem: everything comes from this package's own
 (`{"action":"list"}` · `{"action":"delete","id":"mem_…"}` · `{"action":"clear","confirm":true}`).
 The route is mounted only when the host provides `connection` (optional injection), so headless hosts keep working without it.
 
+## Plugin metadata: title, description, icon
+
+The plugin list does not read `description` from `package.json` directly. The host's `pluginPackages.metaOf()` does this:
+
+1. resolves `dsh-memory/locale/en.json` through the package's **`exports` map** — without that export the whole metadata block silently disappears;
+2. scans every `*.json` next to it, each named after a language id (`en`, `zh`, `pt-BR`), and requires `meta.title` / `meta.description` to be non-empty strings;
+3. falls back to `package.json` `name` (title) and `description` (description) when a locale omits a field;
+4. takes the icon from `exports["./icon"]` (or a manifest `icon` path): SVG, PNG, JPEG or WebP up to 256 KiB.
+
+So this package ships `locale/en.json` and `locale/zh.json`, each with `meta.title` and `meta.description`. Adding a language is one file in `locale/`; no code change. Both `files` (`locale/*.json`) and `exports` (`./locale/*.json`) are load-bearing — a `file:` install would still work from the local tree, but a `git`/registry install only sees whitelisted files. `en.json` is both the entry point and the directory anchor, so every other language depends on it.
+
 ## Reuse
 
 ```js
@@ -56,7 +67,7 @@ import { rankRecords, tokenize } from 'dsh-memory/retrieval'
 
 ```bash
 npm run check
-npm test        # 37 cases: format round trip, degraded parse, concurrent appends, lock contention, redaction, ranking
+npm test        # 43 cases: format round trip, degraded parse, concurrent appends, lock contention, redaction, ranking, locale metadata and icon
 npm run verify  # read-only health check; add -- --selftest for a write → recall → clear round trip
 ```
 

@@ -125,6 +125,24 @@ DSH_HOME=/tmp/dshh dsh --profile check --dump-config | grep -A1 "dsh-memory"
 
 路由只在宿主提供 `connection` 服务时安装（用 `ctx.inject(['connection'], …)` 可选注入）；无头宿主上插件照常可用，只是没有设置页。
 
+## 插件元数据：名称、说明、图标
+
+插件列表里的标题与说明不是从 `package.json` 的 `description` 直接拿的，宿主 `pluginPackages.metaOf()` 的流程是：
+
+1. 用包解析器找 `dsh-memory/locale/en.json`——**必须出现在 `exports` 里**，否则整块元数据静默消失；
+2. 以该文件所在目录为基准，扫描全部 `*.json`，文件名必须是语言 id（`en`、`zh`、`pt-BR`），每个文件的 `meta.title` / `meta.description` 都必须是非空字符串；
+3. 缺字段时回退到 `package.json` 的 `name`（标题）和 `description`（说明）；
+4. 图标来自 `exports["./icon"]`（或 manifest 的 `icon` 字段），支持 SVG/PNG/JPEG/WebP，上限 256 KiB。
+
+所以本包的 `locale/en.json`、`locale/zh.json` 提供：
+
+| | 标题 `meta.title` | 说明 `meta.description` |
+| --- | --- | --- |
+| `en` | Memory | Long-term memory for the agent: recalls earlier decisions, preferences and project notes… |
+| `zh` | 记忆 | 为智能体提供长期记忆：跨会话召回此前的决策、偏好与项目约定… |
+
+新增语言只需往 `locale/` 放一个 `<语言 id>.json`，不必改代码；但 `files` 白名单与 `exports` 的 `./locale/*.json` 是前提，漏了 `git` 安装就拿不到文件。`en.json` 既是入口也是基准目录，缺了它，其余语言的标题与说明都不会显示。
+
 ## 复用核心逻辑
 
 需要在自己的插件里读同一份归档时，直接引子路径，不必重复实现：
@@ -151,14 +169,16 @@ dsh-memory/
 ├── lib/retrieval.js      # 中文二元组 + 英文分词的关键词打分
 ├── scripts/verify.mjs    # 只读健康检查（可 --selftest 跑端到端闭环）
 ├── cordis.patch.yml      # bundle patch：插入 id=memory
-└── test/                 # node --test，覆盖格式往返、并发写入、锁、脱敏、排序、管理动作
+├── locale/               # 插件元数据：en.json / zh.json 的标题与说明
+├── icon.svg              # 插件列表图标（经 exports["./icon"] 暴露）
+└── test/                 # node --test，覆盖格式往返、并发写入、锁、脱敏、排序、管理动作、元数据
 ```
 
 ## 验证
 
 ```bash
 npm run check   # 逐文件 node --check
-npm test        # 37 个用例：格式往返、降级解析、并发追加、锁争用、脱敏、排序、删除/清空/分发
+npm test        # 43 个用例：格式往返、降级解析、并发追加、锁争用、脱敏、排序、删除/清空/分发、元数据与图标
 npm run verify  # 只读健康检查；加 -- --selftest 跑写入→召回→清空闭环
 ```
 

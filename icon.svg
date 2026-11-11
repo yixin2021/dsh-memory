@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Memory">
+  <defs>
+    <linearGradient id="dsh-memory-layers" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#7ee0c9"/>
+      <stop offset="1" stop-color="#3f8ef7"/>
+    </linearGradient>
+  </defs>
+  <!-- Dark tile so the glyph keeps contrast on both light and dark hosts. -->
+  <rect width="64" height="64" rx="15" fill="#122033"/>
+  <!-- Three stacked layers: memory kept as an append-only log, folded into one state. -->
+  <g fill="none" stroke="url(#dsh-memory-layers)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 16.5 47 24l-15 7.5L17 24z"/>
+    <path d="M17 32.2 32 39.7l15-7.5" opacity="0.78"/>
+    <path d="M17 40.6 32 48.1l15-7.5" opacity="0.55"/>
+  </g>
+</svg>
