@@ -1,0 +1,80 @@
+{
+  "name": "dsh-memory",
+  "version": "0.1.0",
+  "description": "Persistent memory for DeepSeek Harness: mirrors an upstream memory archive read-only, keeps its own append-only store, and exposes memory_recall / memory_update / memory_profile.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "plugin",
+    "memory",
+    "long-term-memory",
+    "archive-mirror"
+  ],
+  "license": "MIT",
+  "author": "ligudian",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./archive": "./lib/archive.js",
+    "./store": "./lib/store.js",
+    "./redact": "./lib/redact.js",
+    "./retrieval": "./lib/retrieval.js"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib/archive.js",
+    "lib/store.js",
+    "lib/management.js",
+    "lib/redact.js",
+    "lib/retrieval.js",
+    "scripts/verify.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check client.js && node --check lib/archive.js && node --check lib/store.js && node --check lib/management.js && node --check lib/redact.js && node --check lib/retrieval.js",
+    "test": "npm run check --silent && node --test test/*.test.mjs",
+    "verify": "node scripts/verify.mjs"
+  },
+  "engines": {
+    "node": ">=20",
+    "dsh": "0.2.2-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
+    "@deepseek-ai/schemastery": "~3.19.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  }
+}
