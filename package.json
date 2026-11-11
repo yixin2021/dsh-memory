@@ -1,6 +1,6 @@
 {
   "name": "dsh-memory",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Persistent memory for DeepSeek Harness: mirrors an upstream memory archive read-only, keeps its own append-only store, and exposes memory_recall / memory_update / memory_profile.",
   "keywords": [
     "deepseek-harness",
@@ -47,12 +47,12 @@
   },
   "engines": {
     "node": ">=20",
-    "dsh": "0.2.2-rc.1"
+    "dsh": "^0.2.2-rc.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
-    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.2.2-rc.1",
     "@deepseek-ai/schemastery": "~3.19.0"
   },
   "peerDependenciesMeta": {

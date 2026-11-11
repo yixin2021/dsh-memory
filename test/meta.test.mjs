@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import semver from '/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/node_modules/semver/index.js'
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf-8'))
@@ -83,4 +84,37 @@ test('语言文件被 files 白名单收录，git 安装不会漏发', async () 
   assert.ok(manifest.files.includes('icon.svg'))
   assert.equal(manifest.exports['./locale/*.json'], './locale/*.json')
   assert.equal(manifest.exports['./icon'], './icon.svg')
+})
+
+/**
+ * 宿主（dsh-app-boot 的 evaluatePluginCompatibility）在启动时校验 engines.dsh：
+ * 精确版本只匹配一个发布，rc 升级即整包被禁用；必须用带 ^ 的预发布范围。
+ * includePrerelease 下 ^0.2.2-rc.1 覆盖 0.2.2 全系预发布与 0.2.x，止步于 0.3.0。
+ */
+const KNOWN_RUNTIME_VERSIONS = ['0.2.2-rc.1', '0.2.2-rc.2']
+
+test('engines.dsh 是范围声明且覆盖已发布的运行时', () => {
+  const range = manifest.engines.dsh
+  assert.equal(typeof range, 'string', 'engines.dsh 必须存在')
+  assert.notEqual(range, '0.2.2-rc.1', '精确版本在 rc.2 上会让插件被宿主禁用')
+  assert.match(range, /^[\^~><=]/, '必须是 semver 范围而不是精确版本')
+  for (const runtime of KNOWN_RUNTIME_VERSIONS) {
+    assert.ok(
+      semver.satisfies(runtime, range, { includePrerelease: true }),
+      `engines.dsh=${range} 不覆盖已发布运行时 ${runtime}`,
+    )
+  }
+})
+
+test('dsh peer 依赖同样使用范围声明', () => {
+  for (const [name, range] of Object.entries(manifest.peerDependencies)) {
+    if (!name.startsWith('@deepseek-ai/dsh')) continue
+    assert.match(range, /^[\^~]/, `${name} 用精确版本会在宿主升级后被判不兼容`)
+    for (const runtime of KNOWN_RUNTIME_VERSIONS) {
+      assert.ok(
+        semver.satisfies(runtime, range, { includePrerelease: true }),
+        `${name}=${range} 不覆盖运行时 ${runtime}`,
+      )
+    }
+  }
 })
