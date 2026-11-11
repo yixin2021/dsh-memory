@@ -8,15 +8,19 @@ It mirrors an upstream app's memory archive **read-only**, folds in workspace me
 
 An upstream archive write relies on three cooperating guards: a per-uid in-process mutex, a `.lock` file, and a version guard that refuses writes older than the file on disk. An external process can imitate the file lock but cannot join the upstream mutex. Worse, a write whose version equals the on-disk version is treated as `same_version` and **silently skipped**, while the current file is copied over `.bak` first — so an outside writer can both lose its data and destroy the backup.
 
-So this plugin never writes an archive. Writes go to `~/.dsh-memory/records.jsonl`, an event-sourced log that folds `add` / `correct` / `delete` into current state and compacts above 2000 lines.
+So this plugin never writes an archive. Writes go to `~/.dsh-memory/records.jsonl`, an event-sourced log that folds `add` / `correct` / `delete` into current state and compacts once the file grows past a size floor and 2000 lines.
+
+Writes use the same two-layer shape as upstream: same-process writers queue in memory per directory, and `.records.lock` only guards other processes on the machine. A file lock alone starves writers — N same-process writers contend for one lock, one wins per round, so any retry count below N ends in `lock_contention`. The critical section stays `append + stat`; the file is only re-read for compaction once it passes the size floor.
 
 ## Install
 
 ```bash
 cd ~/.dsh/profiles/<profile>
-pnpm add /Users/ligudian/code/dsh-plugins/dsh-memory
+pnpm add github:yixin2021/dsh-memory
 # then add "dsh-memory" to dsh.profile.bundles in that profile's package.json
 ```
+
+Local development can use `pnpm add file:/path/to/dsh-memory` instead; a `file:` install is a snapshot, so re-run it after editing sources.
 
 The bundle's `cordis.patch.yml` inserts the plugin as `id: memory`.
 
@@ -52,7 +56,7 @@ import { rankRecords, tokenize } from 'dsh-memory/retrieval'
 
 ```bash
 npm run check
-npm test        # 35 cases: format round trip, degraded parse, concurrent appends, lock contention, redaction, ranking
+npm test        # 37 cases: format round trip, degraded parse, concurrent appends, lock contention, redaction, ranking
 npm run verify  # read-only health check; add -- --selftest for a write → recall → clear round trip
 ```
 

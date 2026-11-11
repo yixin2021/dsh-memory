@@ -19,6 +19,11 @@
 
 `archiveRoot` 与 `workspaceFolder` 的默认值是上游应用在磁盘上使用的目录名（见下表），可取配置或环境变量覆盖；包内只有一处保留该字面量。
 
+写入侧沿用同样的双层结构：同进程写者先按目录进内存队列串行，再由 `.records.lock` 兜住同机其他进程。
+只靠文件锁会有饿死问题——N 个同进程写者抢一把锁，每轮只有一个能进，重试次数小于 N 就必然报
+`lock_contention`。锁内只做"追加 + stat"，`records.jsonl` 体积越过下限才全量读一遍判断是否需要压缩，
+临界区不随文件增长而变长。
+
 ## 安装
 
 插件走 profile 的依赖 + patch 两层，与 `dsh-skills` 等插件一致。
@@ -29,13 +34,14 @@
 ```bash
 cd ~/.dsh/profiles/desktop
 D="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/primary-runtime/dependencies"
-"$D/node/bin/node" "$D/pnpm/bin/pnpm.mjs" add file:/Users/ligudian/code/dsh-plugins/dsh-memory
+"$D/node/bin/node" "$D/pnpm/bin/pnpm.mjs" add github:yixin2021/dsh-memory
 ```
 
 然后把 `"dsh-memory"` 追加到该 profile `package.json` 的 `dsh.profile.bundles` 数组末尾
 （本包自带 `cordis.patch.yml`，bundle 引用会自动插入 `id: memory` 的插件条目），再重启客户端。
 
-`file:` 安装是**快照**（硬链接），改完源码要重跑一次上面的 `add` 才会生效。
+本地改代码时可临时改用 `add file:/path/to/dsh-memory`；`file:` 是**快照**（硬链接），
+改完源码要重跑一次 `add` 才生效，而 `github:` 依赖拉的是仓库里的已提交内容，本地改动必须提交并推送。
 
 校验组合结果（`desktop` 名字被占用，用同名软链绕过）：
 
@@ -152,7 +158,7 @@ dsh-memory/
 
 ```bash
 npm run check   # 逐文件 node --check
-npm test        # 35 个用例：格式往返、降级解析、并发追加、锁争用、脱敏、排序、删除/清空/分发
+npm test        # 37 个用例：格式往返、降级解析、并发追加、锁争用、脱敏、排序、删除/清空/分发
 npm run verify  # 只读健康检查；加 -- --selftest 跑写入→召回→清空闭环
 ```
 
