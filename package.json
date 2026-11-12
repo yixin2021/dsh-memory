@@ -1,15 +1,14 @@
 {
   "name": "dsh-memory",
-  "version": "0.1.2",
-  "description": "Persistent memory for DeepSeek Harness: mirrors an upstream memory archive read-only, keeps its own append-only store, and exposes memory_recall / memory_update / memory_profile.",
+  "version": "0.1.3",
+  "description": "Persistent memory for DeepSeek Harness: an append-only local store with memory_recall / memory_update / memory_profile, a settings panel, and no dependency on any external app.",
   "keywords": [
     "deepseek-harness",
     "dsh",
     "dsh-plugin",
     "plugin",
     "memory",
-    "long-term-memory",
-    "archive-mirror"
+    "long-term-memory"
   ],
   "license": "MIT",
   "author": "ligudian",
@@ -17,7 +16,6 @@
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
-    "./archive": "./lib/archive.js",
     "./store": "./lib/store.js",
     "./redact": "./lib/redact.js",
     "./retrieval": "./lib/retrieval.js",
@@ -27,7 +25,6 @@
   "files": [
     "index.js",
     "client.js",
-    "lib/archive.js",
     "lib/store.js",
     "lib/management.js",
     "lib/redact.js",
@@ -41,7 +38,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "node --check index.js && node --check client.js && node --check lib/archive.js && node --check lib/store.js && node --check lib/management.js && node --check lib/redact.js && node --check lib/retrieval.js",
+    "check": "node --check index.js && node --check client.js && node --check lib/store.js && node --check lib/management.js && node --check lib/redact.js && node --check lib/retrieval.js",
     "test": "npm run check --silent && node --test test/*.test.mjs",
     "verify": "node scripts/verify.mjs"
   },

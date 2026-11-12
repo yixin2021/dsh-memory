@@ -4,14 +4,13 @@
  *
  * 回答一个问题：记忆现在到底生效到哪一步了。
  *
- * 默认全只读——只读磁盘上的库与归档，不改一个字节。
+ * 默认全只读——只读磁盘上的库，不改一个字节。
  * 加 `--selftest` 时会在临时目录里跑一次「写入 → 召回 → 清空」的闭环，
  * 用真实代码路径证明引擎本身可用（全程不碰你自己的库）。
  *
  * 用法：
  *   npm run verify            # 只检查现状
  *   npm run verify -- --selftest
- *   DSH_MEMORY_UID=<uid> npm run verify     # 顺带检查归档镜像
  */
 
 import { tmpdir } from 'node:os'
@@ -19,12 +18,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 
-import { readArchive } from '../lib/archive.js'
 import { rankRecords } from '../lib/retrieval.js'
 import { appendRecord, clearRecords, loadRecords } from '../lib/store.js'
 
 const dataDir = process.env.DSH_MEMORY_DATA_DIR?.trim() || path.join(homedir(), '.dsh-memory')
-const uid = process.env.DSH_MEMORY_UID?.trim() || ''
 const selftest = process.argv.includes('--selftest')
 
 const ok = []
@@ -83,29 +80,9 @@ if (records.length === 0) {
   }
 }
 
-// 3) 上游归档镜像
-console.log('\n[3] 上游归档镜像')
-if (!uid) {
-  line('○', '未启用', 'uid 未设置，插件只用自己的库（这是默认状态，不是故障）')
-  warn.push('归档镜像未启用：想看归档请设置 uid，或忽略——写入与召回都不依赖它。')
-} else {
-  const archive = await readArchive({ uid })
-  if (!archive) {
-    line('✗', '找不到归档', `uid=${uid} 下没有匹配的 *_memory.md`)
-    fail.push('设置了 uid 但读不到归档：检查 archiveRoot 与 uid 是否正确。')
-  } else {
-    const chars = (archive.profile.memoryBlock ?? '').length
-    line('✓', '归档可读', `${path.basename(archive.file)} · version ${archive.profile.version ?? '?'} · 画像 ${chars} 字`)
-    ok.push('归档可读')
-    if (chars === 0) {
-      line('·', '画像为空', '版本存在但 memoryBlock 是空串——归档本身就没内容，与插件无关')
-    }
-  }
-}
-
-// 4) 端到端自检（临时目录，不碰真实库）
+// 3) 端到端自检（临时目录，不碰真实库）
 if (selftest) {
-  console.log('\n[4] 写入 → 召回 → 清空 闭环（临时目录）')
+  console.log('\n[3] 写入 → 召回 → 清空 闭环（临时目录）')
   const dir = await mkdtemp(path.join(tmpdir(), 'dsh-memory-verify-'))
   try {
     const id = await appendRecord(dir, { id: 'mem_selftest', action: 'add', text: '自检：偏好简洁的中文技术回答' })
@@ -128,7 +105,7 @@ if (selftest) {
   }
 }
 
-// 5) 结论
+// 4) 结论
 console.log(`\n${'─'.repeat(60)}`)
 if (fail.length === 0) {
   console.log(`结论：插件工作正常${warn.length ? `（${warn.length} 项提示见下）` : ''}。`)

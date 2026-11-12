@@ -41,14 +41,10 @@ window.__ModuleLoader__.load({
       'action.cancel': 'Cancel',
       'action.confirm': 'Delete forever',
       'confirm.title': 'Delete all {count} entries?',
-      'confirm.body': 'This empties the store file and cannot be undone. The upstream archive is not touched.',
+      'confirm.body': 'This empties the store file and cannot be undone.',
       'empty.title': 'No memories yet',
       'empty.body': 'Ask the assistant to remember something in a conversation, then come back here.',
       'row.deleted': 'Deleting…',
-      'archive.title': 'Upstream archive · read-only',
-      'archive.meta': 'version {version} · {chars} profile characters',
-      'archive.note': 'Mirrored from an upstream app and never written to by this plugin, so it cannot be cleared here.',
-      'archive.absent': 'No upstream archive is mirrored (uid unset or standalone mode).',
       'error.load': 'Could not read the store:',
       'error.render': 'This section failed to render:',
       'loading': 'Reading memory…',
@@ -66,14 +62,10 @@ window.__ModuleLoader__.load({
       'action.cancel': '取消',
       'action.confirm': '永久删除',
       'confirm.title': '删除全部 {count} 条记忆？',
-      'confirm.body': '这会清空存储文件，无法恢复。上游归档不受影响。',
+      'confirm.body': '这会清空存储文件，无法恢复。',
       'empty.title': '还没有记忆',
       'empty.body': '在会话里让助手记住一些事，再回到这里查看。',
       'row.deleted': '删除中…',
-      'archive.title': '上游归档 · 只读',
-      'archive.meta': '版本 {version} · 画像 {chars} 字',
-      'archive.note': '这里镜像的是上游应用的数据，本插件从不写入，因此不能在此清空。',
-      'archive.absent': '没有镜像到上游归档（未设置 uid 或处于 standalone 模式）。',
       'error.load': '读取记忆库失败：',
       'error.render': '这个设置分区渲染失败：',
       'loading': '正在读取记忆…',
@@ -248,7 +240,7 @@ window.__ModuleLoader__.load({
        * 只从 Host 拿数据；渲染期抛错会被外层兜住并显示。
        */
       function MemorySection() {
-        const [snapshot, setSnapshot] = React.useState({ status: 'loading', records: [], store: undefined, archive: undefined })
+        const [snapshot, setSnapshot] = React.useState({ status: 'loading', records: [], store: undefined })
         const [busy, setBusy] = React.useState(false)
         const [confirming, setConfirming] = React.useState(false)
         const [removing, setRemoving] = React.useState('')
@@ -270,7 +262,6 @@ window.__ModuleLoader__.load({
             status: 'ready',
             records: Array.isArray(answer.records) ? answer.records : [],
             store: answer.store,
-            archive: answer.archive,
           })
         }, [])
 
@@ -384,8 +375,6 @@ window.__ModuleLoader__.load({
             : null,
 
           h('div', { className: 'mem-scroll' }, renderBody()),
-
-          snapshot.status === 'ready' ? renderArchive() : null,
         )
 
         /** 列表区：加载中 / 空态 / 条目。 */
@@ -422,26 +411,6 @@ window.__ModuleLoader__.load({
                 ),
               ),
             ),
-          )
-        }
-
-        /** 归档只读块：只说事实，不给操作。 */
-        function renderArchive() {
-          const archive = snapshot.archive
-          if (archive === undefined) {
-            return h('div', { className: 'mem-archive mem-archive-muted' }, t('archive.absent'))
-          }
-          return h(
-            'div',
-            { className: 'mem-archive' },
-            h('div', { className: 'mem-archive-head' }, t('archive.title')),
-            h('code', { className: 'mem-archive-file' }, archive.file ?? ''),
-            h(
-              'div',
-              { className: 'mem-archive-meta' },
-              t('archive.meta', { version: archive.version ?? '—', chars: archive.blockChars ?? 0 }),
-            ),
-            h('div', { className: 'mem-archive-note' }, t('archive.note')),
           )
         }
       }
@@ -488,11 +457,6 @@ window.__ModuleLoader__.load({
         '.mem-empty{display:flex;flex-direction:column;gap:4px;padding:24px 12px;align-items:center;text-align:center;color:var(--dsw-alias-label-secondary,currentColor)}',
         '.mem-empty-title{color:var(--dsw-alias-label-primary,currentColor);font-weight:600}',
         '.mem-empty-body{font-size:12px;max-width:420px}',
-        '.mem-archive{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border:0.5px dashed var(--dsw-alias-border-l2,rgba(128,128,128,.4));border-radius:10px;font-size:11px;color:var(--dsw-alias-label-secondary,currentColor)}',
-        '.mem-archive-muted{font-style:normal}',
-        '.mem-archive-head{color:var(--dsw-alias-label-primary,currentColor);font-weight:600;font-size:12px}',
-        '.mem-archive-file{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-        '.mem-archive-note{opacity:.9}',
       ].join('\n')
     }
 

@@ -1,13 +1,11 @@
 /**
  * dsh-memory — 跨会话长期记忆插件。
  *
- * 三个来源、一个写入出口：
- * - 读：上游记忆归档（只读镜像，兼容两种目录布局与 legacy 拼写）
- * - 读：上游工作区记忆（MEMORY.md + 最近日誌）
- * - 读/写：本插件自有 append-only 库（JSONL，锁内追加，超阈值折叠压缩）
+ * 单一数据源：本机自有 append-only 库（JSONL，锁内追加，超阈值折叠压缩）。
+ * 不读取、不镜像任何外部应用的记忆文件。
  *
- * 工具语义对齐上游宿主的 `MemoryRecall` / `MemoryUpdate`，因此同一套提示词策略可以
- * 在两个宿主之间平移；`ctx.provide('memory')` 让其他插件无需重复注册工具。
+ * 工具语义对齐常见的 `MemoryRecall` / `MemoryUpdate` 语义，因此同一套提示词策略可以
+ * 在不同宿主之间平移；`ctx.provide('memory')` 让其他插件无需重复注册工具。
  *
  * @module dsh-memory
  */
@@ -18,7 +16,6 @@ import path from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
-import { readArchive, readUserMemory, readWorkspaceMemory } from './lib/archive.js'
 import { dispatchManagement } from './lib/management.js'
 import { looksLikeSecret, redactPaths, truncateUtf16 } from './lib/redact.js'
 import { rankRecords } from './lib/retrieval.js'
@@ -45,8 +42,8 @@ preferences, standing conventions and verified lessons — never for transient s
 **Recall**
 - Call \`memory_recall\` before an answer that depends on private prior context: earlier
   decisions, user preferences, incidents, conventions, or how a past task was resolved.
-- Skip self-contained requests, and skip anything already present in the conversation,
-  in project files, or in injected workspace notes.
+- Skip self-contained requests, and skip anything already present in the conversation
+  or in project files.
 - Recalled memory is background. Current user input and the verified current state of
   files take precedence; memory never establishes what a file or task looks like now.
 - If recall returns nothing, continue when the task is still completable and ask only
@@ -72,26 +69,10 @@ preferences, standing conventions and verified lessons — never for transient s
 
 /** 插件配置。 */
 export const Config = z.object({
-  /** `mirror` 额外读取上游归档与工作区记忆；`standalone` 只用自有库。 */
-  readMode: z.union([z.const('mirror'), z.const('standalone')]).default('mirror'),
-  /** 上游账号 uid，决定归档文件名；留空则不镜像。 */
-  uid: z.string().default(''),
-  /** 企业作用域，决定 `memory/platform/<scope>/` 子目录。 */
-  enterpriseId: z.string().default(''),
-  /** 上游数据根目录；留空用内置默认目录。 */
-  archiveRoot: z.string().default(''),
-  /** 工作区里的上游数据目录名；留空用内置默认值。 */
-  workspaceFolder: z.string().default(''),
-  /** 工作区根目录；留空取进程工作目录。 */
-  workspace: z.string().default(''),
-  /** 自有记忆库目录。 */
+  /** 自有记忆库目录；留空用 `~/.dsh-memory`。 */
   dataDir: z.string().default(''),
   /** 单次召回条目上限。 */
   recallLimit: z.natural().default(8),
-  /** 是否在召回结果里附带归档画像摘要。 */
-  injectProfile: z.boolean().default(true),
-  /** 画像摘要字符上限。 */
-  injectLimit: z.natural().default(4000),
 })
 
 /**
@@ -121,25 +102,6 @@ const RECALL_OUTPUT = {
           },
         },
       },
-      archive: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          file: { type: 'string', required: true },
-          version: { type: 'integer' },
-          updatedAt: { type: 'string' },
-          blockChars: { type: 'integer', required: true },
-        },
-      },
-      workspace: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          dir: { type: 'string', required: true },
-          latestDaily: { type: 'string' },
-        },
-      },
-      profileExcerpt: { type: 'string' },
       note: { type: 'string' },
     },
   },
@@ -164,24 +126,19 @@ const UPDATE_OUTPUT = {
   render: renderJson,
 }
 
-/** 画像查询工具的输出契约。 */
+/** 库状态查询工具的输出契约。 */
 const PROFILE_OUTPUT = {
   schema: {
     type: 'object',
     additionalProperties: false,
     properties: {
       available: { type: 'boolean', required: true },
-      file: { type: 'string' },
-      uid: { type: 'string' },
-      version: { type: 'integer' },
-      updatedAt: { type: 'string' },
-      bytes: { type: 'integer' },
-      blockChars: { type: 'integer' },
       store: {
         type: 'object',
         additionalProperties: false,
         properties: {
           dir: { type: 'string', required: true },
+          file: { type: 'string', required: true },
           records: { type: 'integer', required: true },
           lines: { type: 'integer', required: true },
         },
@@ -206,16 +163,8 @@ function createTraceId() {
 function resolveConfig(config) {
   const dataDir = config.dataDir?.trim() || path.join(homedir(), '.dsh-memory')
   return {
-    readMode: config.readMode ?? 'mirror',
-    uid: config.uid?.trim() ?? '',
-    enterpriseId: config.enterpriseId?.trim() ?? '',
-    archiveRoot: config.archiveRoot?.trim() ?? '',
-    workspaceFolder: config.workspaceFolder?.trim() ?? '',
-    workspace: config.workspace?.trim() || process.cwd(),
     dataDir,
     recallLimit: Math.min(Math.max(config.recallLimit ?? 8, 1), 50),
-    injectProfile: config.injectProfile !== false,
-    injectLimit: Math.max(config.injectLimit ?? 4000, 200),
   }
 }
 
@@ -227,23 +176,7 @@ export function createMemoryService(config) {
   const resolved = resolveConfig(config)
 
   return {
-    /** 归档 + 用户画像 + 工作区记忆，全部只读。 */
-    async inspect() {
-      if (resolved.readMode === 'standalone') return {}
-      const scope = {
-        uid: resolved.uid,
-        enterpriseId: resolved.enterpriseId,
-        ...(resolved.archiveRoot ? { archiveRoot: resolved.archiveRoot } : {}),
-      }
-      const [archive, userMemory, workspace] = await Promise.all([
-        resolved.uid ? readArchive(scope) : undefined,
-        resolved.uid ? readUserMemory(scope) : undefined,
-        readWorkspaceMemory(resolved.workspace, { folderName: resolved.workspaceFolder }),
-      ])
-      return { archive, userMemory, workspace }
-    },
-
-    /** 召回：自有库排序 + 归档画像摘要。 */
+    /** 召回：自有库排序。 */
     async recall(query, options = {}) {
       const traceId = options.traceId ?? createTraceId()
       const limit = Math.min(options.limit ?? resolved.recallLimit, 50)
@@ -257,30 +190,7 @@ export function createMemoryService(config) {
       }))
 
       const result = { trace_id: traceId, query, hits }
-      const seen = await this.inspect()
-
-      if (seen.archive) {
-        result.archive = {
-          file: seen.archive.file,
-          ...(typeof seen.archive.profile.version === 'number' ? { version: seen.archive.profile.version } : {}),
-          ...(seen.archive.profile.updatedAt ? { updatedAt: seen.archive.profile.updatedAt } : {}),
-          blockChars: (seen.archive.profile.memoryBlock ?? '').length,
-        }
-        if (resolved.injectProfile && seen.archive.profile.memoryBlock) {
-          result.profileExcerpt = truncateUtf16(seen.archive.profile.memoryBlock, resolved.injectLimit)
-        }
-      }
-      if (seen.workspace) {
-        result.workspace = {
-          dir: seen.workspace.dir,
-          ...(seen.workspace.latestDaily ? { latestDaily: seen.workspace.latestDaily.name } : {}),
-        }
-      }
-      if (hits.length === 0) {
-        result.note = seen.archive
-          ? 'No entry in the local store matched; the archive above only reports its size and version.'
-          : 'No entry in the local store matched, and no archive is mirrored (uid unset or standalone mode).'
-      }
+      if (hits.length === 0) result.note = 'No entry in the local store matched this query.'
       return result
     },
 
@@ -341,39 +251,20 @@ export function createMemoryService(config) {
       }
     },
 
-    /** 自检：归档元信息 + 自有库规模。 */
+    /** 自检：自有库规模与文件位置。 */
     async profile() {
-      const seen = await this.inspect()
       const { records, lines, file } = await loadRecords(resolved.dataDir)
-      if (!seen.archive) {
-        return {
-          available: false,
-          store: { dir: resolved.dataDir, records: records.length, lines },
-          note: resolved.uid
-            ? 'No archive found for this uid; check readMode, archiveRoot and the archive directory.'
-            : 'uid is unset, so no archive is mirrored. Set uid to read one.',
-        }
-      }
       return {
         available: true,
-        file: seen.archive.file,
-        ...(seen.archive.profile.uid ? { uid: seen.archive.profile.uid } : {}),
-        ...(typeof seen.archive.profile.version === 'number' ? { version: seen.archive.profile.version } : {}),
-        ...(seen.archive.profile.updatedAt ? { updatedAt: seen.archive.profile.updatedAt } : {}),
-        bytes: seen.archive.bytes,
-        blockChars: (seen.archive.profile.memoryBlock ?? '').length,
-        store: { dir: resolved.dataDir, records: records.length, lines },
-        note: `archive is read-only; writes go to ${path.basename(file)} in the store above`,
+        store: { dir: resolved.dataDir, file, records: records.length, lines },
+        note: records.length === 0 ? 'The store is empty; nothing has been written yet.' : undefined,
       }
     },
 
-    /**
-     * 设置页：列出全部自有记忆（按时间倒序）与只读镜像的元信息。
-     */
+    /** 设置页：列出全部自有记忆（按时间倒序）。 */
     async list() {
       const { records, lines, file } = await loadRecords(resolved.dataDir)
       const sorted = [...records].sort((a, b) => String(b.ts ?? '').localeCompare(String(a.ts ?? '')))
-      const seen = await this.inspect()
       return {
         records: sorted.map((record) => ({
           id: record.id,
@@ -382,16 +273,6 @@ export function createMemoryService(config) {
           ...(record.ts ? { ts: record.ts } : {}),
         })),
         store: { dir: resolved.dataDir, file, records: records.length, lines },
-        ...(seen.archive
-          ? {
-              archive: {
-                file: seen.archive.file,
-                ...(typeof seen.archive.profile.version === 'number' ? { version: seen.archive.profile.version } : {}),
-                ...(seen.archive.profile.updatedAt ? { updatedAt: seen.archive.profile.updatedAt } : {}),
-                blockChars: (seen.archive.profile.memoryBlock ?? '').length,
-              },
-            }
-          : {}),
       }
     },
 
@@ -420,7 +301,7 @@ export function createMemoryService(config) {
 
     /**
      * 设置页：清空整个库。
-     * 只清自有库；上游归档是外部数据，且本插件对它只读。
+     * 只清本机库，不涉及任何外部文件。
      */
     async clear() {
       try {
@@ -510,7 +391,7 @@ export function apply(ctx, config) {
     defineTool({
       name: 'memory_profile',
       description:
-        'Inspect the mirrored upstream memory archive and the local store size. Read-only; use it before reporting memory state instead of guessing.',
+        'Inspect the local memory store: directory, file, number of live entries and raw event lines. Read-only; use it before reporting memory state instead of guessing.',
       parameters: {},
       output: PROFILE_OUTPUT,
       execute() {
